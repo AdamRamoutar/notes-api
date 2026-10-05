@@ -26,7 +26,7 @@ app.listen(port, ()=>{
     console.log("The server is running");
 });
 
-app.get('/notes', async (req, res) => {
+app.get('/notes', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM notes');
         console.log(result.rows);
@@ -38,7 +38,7 @@ app.get('/notes', async (req, res) => {
     }
 });
 
-app.post('/notes', async (req, res) => {
+app.post('/notes', authenticateToken, async (req, res) => {
     const { title, content } = req.body;
 
     try{
@@ -52,7 +52,7 @@ app.post('/notes', async (req, res) => {
     }
 });
 
-app.delete('/notes/:id', async (req, res) => {
+app.delete('/notes/:id', authenticateToken, async (req, res) => {
     const targetID = Number((req.params.id));
 
     try{
@@ -69,7 +69,7 @@ app.delete('/notes/:id', async (req, res) => {
     }  
 });
 
-app.put('/notes/:id', async (req, res) => {
+app.put('/notes/:id', authenticateToken, async (req, res) => {
 
     const targetID = Number(req.params.id);
     const {title, content} = req.body;
@@ -133,5 +133,26 @@ app.post('/login', async (req, res) => {
         res.status(500).json({message: 'Internal server error.'});
     }
 });
+
+function authenticateToken(req, res, next) {
+    
+    try {
+        const authHeader = req.headers.authorization;
+
+        if(!authHeader){
+            return res.status(401).json({message: 'Access denied, no token provided'});
+        }
+
+        const token = authHeader.split(' ')[1];
+        req.user = jwt.verify(token, process.env.JWT_SECRET);
+        next();    
+    }
+    catch (err) {
+        if(err.name === 'TokenExpiredError') {
+           return res.status(401).json({message: 'Token has expired.'});
+        }
+        return res.status(403).json({ message: 'Invalid token.' });
+    }
+}
 
 
