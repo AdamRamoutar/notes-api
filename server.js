@@ -30,39 +30,67 @@ app.listen(port, ()=>{
     console.log("The server is running");
 });
 
-app.get('/notes', (req, res) => {
-    res.json(notes);
-});
-
-app.post('/notes', (req, res) => {
-    req.body.id = count;
-    notes.push(req.body);
-    count = count + 1;
-    
-    res.send('Data was added to notes');
-});
-
-app.delete('/notes/:id', (req, res) => {
-    const targetID = Number(req.params.id);
-    const updatedNotes = notes.filter(note => note.id !== targetID)
-    notes = [...updatedNotes];
-
-    res.send('Note was sucessfully deleted!')
-});
-
-app.put('/notes/:id', (req,res) =>{
-    const targetID = Number(req.params.id);
-    const targetNote = notes.find(note => note.id === targetID);
-    
-    if(targetNote === undefined){
-        return res.status(404).json({message: 'Item not found'});
+app.get('/notes', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM notes');
+        console.log(result.rows);
+        res.json(result.rows);   
     }
+    catch (err) {
+        console.error(err);
+        res.status(500).json({error: 'Internal server error'});
+    }
+});
 
-    targetNote.title = req.body.title;
-    targetNote.content = req.body.content;
-    targetNote.id = targetID;
+app.post('/notes', async (req, res) => {
+    const { title, content } = req.body;
 
-    res.send("Data was updated");
+    try{
+        const result = await pool.query('INSERT INTO notes (title, content) VALUES ($1, $2) RETURNING *', 
+                                     [title, content]);
+        res.json(result.rows[0]);
+    }
+    catch (err) {
+        console.error(err);
+        res.status(500).json({error: 'Internal server error'});
+    }
+});
+
+app.delete('/notes/:id', async (req, res) => {
+    const targetID = Number((req.params.id));
+
+    try{
+        const result = await pool.query('DELETE FROM notes WHERE id = $1 RETURNING *', 
+                                        [targetID]);
+        if(result.rowCount === 0){
+            return res.status(404).json({message: 'Item not found. Nothing was deleted.'});
+        }
+
+        res.status(200).json({message: 'Item was successfully deleted.', note: result.rows[0]});
+    }  
+    catch (err) {
+        console.error(err);
+        res.status(500).json({error: 'Internal server error'});
+    }  
+});
+
+app.put('/notes/:id', async (req, res) => {
+
+    const targetID = Number(req.params.id);
+    const {title, content} = req.body;
+
+    try{
+        const result = await pool.query('UPDATE notes SET title = $1, content = $2 WHERE id = $3 RETURNING*', 
+                                        [title, content, targetID]);  
+        if(result.rowCount === 0){
+            return res.status(404).json({message: 'Item not found. Nothing was updated.'});
+        }
+
+        res.status(200).json({message: 'Item was successfully updated.', note: result.rows[0]});
+    }
+    catch (err) {
+        res.status(500).json({error: 'Internal server error'});
+    }     
 });
 
 
