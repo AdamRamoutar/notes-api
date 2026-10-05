@@ -1,6 +1,11 @@
 require('dotenv').config();
-
 const {Pool} = require('pg');
+const express = require('express');
+const app = express();
+const port = 3000;
+app.use(express.json());
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
 const pool = new Pool({
     user: process.env.DB_USER,
@@ -12,15 +17,6 @@ const pool = new Pool({
     idleTimeoutMillis: 30000, //close idle clients after 30 seconds
     connectionTimeoutMillis: 2000, //return an error after 2 seconds if connection fails
 });
-
-
-const express = require('express');
-const app = express();
-const port = 3000;
-app.use(express.json());
-
-let notes = [];
-let count = 0;
 
 app.get('/', (req, res) => {
   res.send('Hello World!');
@@ -65,7 +61,6 @@ app.delete('/notes/:id', async (req, res) => {
         if(result.rowCount === 0){
             return res.status(404).json({message: 'Item not found. Nothing was deleted.'});
         }
-
         res.status(200).json({message: 'Item was successfully deleted.', note: result.rows[0]});
     }  
     catch (err) {
@@ -89,8 +84,54 @@ app.put('/notes/:id', async (req, res) => {
         res.status(200).json({message: 'Item was successfully updated.', note: result.rows[0]});
     }
     catch (err) {
+        console.error(err);
         res.status(500).json({error: 'Internal server error'});
     }     
+});
+
+app.post('/register', async (req, res) => {
+    const {email, password} = req.body;
+
+    try{
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const result = await pool.query('INSERT INTO users (email, password) VALUES ($1, $2) RETURNING *',
+                                        [email, hashedPassword]);
+
+        res.status(201).json({message: 'User created successfully.'});
+    }
+    catch (err) {
+        if (err.code === '23505') {
+            return res.status(409).json({error: 'Email already exists.'});
+        }
+        console.error(err);
+        res.status(500).json({error: 'Internal server error'});
+    }
+});
+
+app.post('/login', async (req, res) => {
+    const {email, password} = req.body;
+    try{
+        const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+        const user = result.rows[0];
+
+        if(!user) {
+            return res.status(401).json({ error: 'Invalid email or password' });
+        }
+        
+        const isMatch = await bcrypt.compare(password, user.password);
+
+        if(!isMatch){
+            return res.status(401).json({message: 'Invalid email or password'});
+        }
+
+        const token = jwt.sign({userId: user.id, email: user.email}, process.env.JWT_SECRET, {expiresIn: '1h'});
+        res.status(200).json({message: 'Login successful', token});
+    }
+    catch (err) {
+        console.error(err);
+        res.status(500).json({message: 'Internal server error.'});
+    }
 });
 
 
