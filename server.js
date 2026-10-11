@@ -4,25 +4,36 @@ const {Pool} = require('pg');
 
 const express = require('express');
 const app = express();
-const port = 3000;
+const port =  process.env.PORT || 3000;
 
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 
 app.use(express.json());
-app.use(cors());
+app.use(cors({origin: process.env.FRONTEND_URL || 'http://127.0.0.1:5500'}));
 
-const pool = new Pool({
-    user: process.env.DB_USER,
-    host: process.env.DB_HOST,
-    database: process.env.DB_NAME,
-    password: process.env.DB_PASSWORD,
-    port: process.env.DB_PORT,
-    max: 20, //overide default max connections
-    idleTimeoutMillis: 30000, //close idle clients after 30 seconds
-    connectionTimeoutMillis: 2000, //return an error after 2 seconds if connection fails
-});
+
+
+const pool = new Pool(
+
+    process.env.DATABASE_URL 
+    ? 
+        {
+            connectionString: process.env.DATABASE_URL,
+        } 
+    : 
+        {
+            user: process.env.DB_USER,
+            host: process.env.DB_HOST,
+            database: process.env.DB_NAME,
+            password: process.env.DB_PASSWORD,
+            port: process.env.DB_PORT,
+            max: 20, //overide default max connections
+            idleTimeoutMillis: 30000, //close idle clients after 30 seconds
+            connectionTimeoutMillis: 2000, //return an error after 2 seconds if connection fails
+        }   
+);
 
 app.get('/', (req, res) => {
   res.send('Hello World!');
@@ -34,8 +45,7 @@ app.listen(port, ()=>{
 
 app.get('/notes', authenticateToken, async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM notes');
-        console.log(result.rows);
+        const result = await pool.query('SELECT * FROM notes WHERE user_id = $1', [req.user.userId]);
         res.json(result.rows);   
     }
     catch (err) {
@@ -48,8 +58,8 @@ app.post('/notes', authenticateToken, async (req, res) => {
     const { title, content } = req.body;
 
     try{
-        const result = await pool.query('INSERT INTO notes (title, content) VALUES ($1, $2) RETURNING *', 
-                                     [title, content]);
+        const result = await pool.query('INSERT INTO notes (title, content, user_id) VALUES ($1, $2, $3) RETURNING *', 
+                                     [title, content, req.user.userId]);
         res.json(result.rows[0]);
     }
     catch (err) {
@@ -62,8 +72,8 @@ app.delete('/notes/:id', authenticateToken, async (req, res) => {
     const targetID = Number((req.params.id));
 
     try{
-        const result = await pool.query('DELETE FROM notes WHERE id = $1 RETURNING *', 
-                                        [targetID]);
+        const result = await pool.query('DELETE FROM notes WHERE id = $1 AND user_id = $2 RETURNING *', 
+                                        [targetID, req.user.userId]);
         if(result.rowCount === 0){
             return res.status(404).json({message: 'Item not found. Nothing was deleted.'});
         }
@@ -81,8 +91,8 @@ app.put('/notes/:id', authenticateToken, async (req, res) => {
     const {title, content} = req.body;
 
     try{
-        const result = await pool.query('UPDATE notes SET title = $1, content = $2 WHERE id = $3 RETURNING*', 
-                                        [title, content, targetID]);  
+        const result = await pool.query('UPDATE notes SET title = $1, content = $2 WHERE id = $3 AND user_id = $4 RETURNING*', 
+                                        [title, content, targetID, req.user.userId]);  
         if(result.rowCount === 0){
             return res.status(404).json({message: 'Item not found. Nothing was updated.'});
         }
@@ -160,5 +170,7 @@ function authenticateToken(req, res, next) {
         return res.status(403).json({ message: 'Invalid token.' });
     }
 }
+
+
 
 
