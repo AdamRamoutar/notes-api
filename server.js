@@ -45,7 +45,7 @@ app.listen(port, ()=>{
 
 app.get('/notes', authenticateToken, async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM notes WHERE user_id = $1', [req.user.userId]);
+        const result = await pool.query('SELECT * FROM notes WHERE user_id = $1 ORDER BY id ASC', [req.user.userId]);
         res.json(result.rows);   
     }
     catch (err) {
